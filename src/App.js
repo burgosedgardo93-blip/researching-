@@ -1,23 +1,21 @@
-import logo from './logo.svg';
+import React from 'react';
+import { Canvas } from '@react-three/fiber';
+import Scene from './components/Scene';
 import './App.css';
 
 function App() {
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <Canvas
+        camera={{ position: [10, 8, 10], fov: 55, near: 0.1, far: 100 }}
+        gl={{ antialias: true, toneMapping: 3 }}
+        shadows
+      >
+        <Scene />
+      </Canvas>
+      <div className="overlay">
+        <h1>URBAN EROSION ENGINE</h1>
+      </div>
     </div>
   );
 }
