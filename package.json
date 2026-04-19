@@ -2,27 +2,41 @@
   "name": "urban-erosion-engine",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.0",
+    "@react-three/postprocessing": "^3.0.4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^13.5.0",
+    "@types/lodash.throttle": "^4.1.9",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.183.1",
+    "leva": "^0.10.1",
+    "lodash.throttle": "^4.1.1",
+    "postprocessing": "^6.39.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4"
+    "three": "^0.183.2",
+    "typescript": "^6.0.2",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
+    "vite": "^6.0.11",
+    "vitest": "^3.0.5"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
+    "start": "vite",
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "browserslist": {
     "production": [

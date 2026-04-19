@@ -1,45 +1,92 @@
-import React from 'react';
-import {
-  ContactShadows,
-  OrbitControls,
-  PerspectiveCamera,
-} from '@react-three/drei';
+import { useRef } from 'react';
+import type { MutableRefObject } from 'react';
+import { ContactShadows, OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import TileMap from './TileMap';
+import AtmosphereParticles from './AtmosphereParticles';
+import TimefallSpotLight from './TimefallSpotLight';
+import DroneController from './DroneController';
+import BakeFlashCue, { type BakeFlashHandle } from './BakeFlashCue';
+import PostFXStack from './PostFXStack';
+import WeatherLighting from './WeatherLighting';
+import type { GaeaParamsRef, ArchitectureParams } from '../gaea/gaeaParams';
+import { DEFAULT_ARCHITECTURE } from '../gaea/gaeaParams';
+import type { WeatherParamsRef, ResolvedWeatherRef } from '../gaea/weatherParams';
+import type { StudioProjectBridge } from '../studio/relicProject';
+import { useWorldStore } from '../state/worldStore';
 
-const CHARCOAL = '#121214';
-const FOG_COLOR = '#161618';
+interface UrbanErosionSceneProps {
+  gaeaRef: GaeaParamsRef;
+  weatherRef: WeatherParamsRef;
+  weatherLevaSetterRef: MutableRefObject<null | ((patch: Record<string, unknown>) => void)>;
+  sandstormRequestRef: MutableRefObject<number>;
+  resolvedWeatherRef: ResolvedWeatherRef;
+  bakeEnvironmentRef: MutableRefObject<(() => void) | null>;
+  processErosionEnvironmentRef: MutableRefObject<(() => void) | null>;
+  studioBridgeRef: MutableRefObject<StudioProjectBridge | null>;
+  architecture?: ArchitectureParams;
+}
 
-export default function UrbanErosionScene() {
+export default function UrbanErosionScene({
+  gaeaRef,
+  weatherRef,
+  weatherLevaSetterRef,
+  sandstormRequestRef,
+  resolvedWeatherRef,
+  bakeEnvironmentRef,
+  processErosionEnvironmentRef,
+  studioBridgeRef,
+  architecture = DEFAULT_ARCHITECTURE,
+}: UrbanErosionSceneProps) {
+  const bakeFlashRef = useRef<BakeFlashHandle>(null);
+  const bloomRef = useRef<any>(null);
+  // Studio = sculpting workhorse view: render the floor grid + axis triad so
+  // the user always has spatial context, even when a relic has been fully
+  // eroded down to MIN_HEIGHT and momentarily disappears under the brush.
+  // Cinema strips both helpers — they would shred the beauty pass.
+  const isStudio = useWorldStore(s => s.viewMode === 'STUDIO');
+
   return (
     <>
-      <color attach="background" args={[CHARCOAL]} />
       <PerspectiveCamera makeDefault position={[12, 10, 12]} />
       <OrbitControls enableDamping />
+      <DroneController gaeaRef={gaeaRef} />
 
-      <fog attach="fog" args={[FOG_COLOR, 14, 52]} />
+      <WeatherLighting
+        weatherRef={weatherRef}
+        weatherLevaSetterRef={weatherLevaSetterRef}
+        sandstormRequestRef={sandstormRequestRef}
+        resolvedWeatherRef={resolvedWeatherRef}
+      />
 
       <ambientLight intensity={0.22} color="#8a8a90" />
-      <directionalLight
-        position={[8, 14, 6]}
-        intensity={0.85}
-        color="#d4d2ce"
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-far={40}
-        shadow-camera-left={-14}
-        shadow-camera-right={14}
-        shadow-camera-top={14}
-        shadow-camera-bottom={-14}
-        shadow-bias={-0.00025}
+      <TimefallSpotLight gaeaRef={gaeaRef} resolvedWeatherRef={resolvedWeatherRef} />
+
+      {isStudio ? (
+        <>
+          <gridHelper
+            args={[40, 40, '#4a4c52', '#323336']}
+            position={[0, -0.01, 0]}
+          />
+          <axesHelper args={[6]} position={[0, 0.005, 0]} />
+        </>
+      ) : null}
+
+      <TileMap
+        gaeaRef={gaeaRef}
+        resolvedWeatherRef={resolvedWeatherRef}
+        bakeEnvironmentRef={bakeEnvironmentRef}
+        processErosionEnvironmentRef={processErosionEnvironmentRef}
+        studioBridgeRef={studioBridgeRef}
+        bakeFlashRef={bakeFlashRef}
+        gridSize={architecture.gridSize}
+        baseHeightScale={architecture.baseHeight}
+        seed={architecture.seed}
       />
 
-      {/* Industrial floor grid — muted steel tones */}
-      <gridHelper
-        args={[40, 40, '#4a4c52', '#323336']}
-        position={[0, -0.01, 0]}
-      />
+      <AtmosphereParticles gaeaRef={gaeaRef} resolvedWeatherRef={resolvedWeatherRef} />
 
-      <TileMap />
+      <BakeFlashCue ref={bakeFlashRef} bloomRef={bloomRef} />
+      <PostFXStack ref={bloomRef} gaeaRef={gaeaRef} />
 
       <ContactShadows
         position={[0, 0.01, 0]}
