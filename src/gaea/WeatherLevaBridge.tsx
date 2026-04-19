@@ -1,12 +1,19 @@
-import React, { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { button, useControls } from 'leva';
 import { useWorldStore } from '../state/worldStore';
-import type { WeatherParamsRef } from './weatherParams';
-import { DEFAULT_WEATHER } from './weatherParams';
+import type { WeatherParamsRef, WeatherPreset } from './weatherParams';
+import {
+  DEFAULT_WEATHER,
+  WEATHER_PRESETS,
+  WEATHER_PRESET_SLIDER_TARGETS,
+} from './weatherParams';
 
 /**
- * Leva folder "Weather" → stable ref (imperative reads in R3F) + zustand mirror.
+ * Leva folder "Weather & Lighting" → stable ref (imperative reads in R3F) + zustand mirror.
+ *
+ * The preset dropdown writes back into the slider values so the user can see
+ * what the state machine is converging to.
  */
 export default function WeatherLevaBridge({
   weatherRef,
@@ -17,9 +24,16 @@ export default function WeatherLevaBridge({
   weatherLevaSetterRef: MutableRefObject<null | ((patch: Record<string, unknown>) => void)>;
   sandstormRequestRef: MutableRefObject<number>;
 }) {
+  const lastPresetRef = useRef<WeatherPreset>(DEFAULT_WEATHER.currentWeather);
+
   const [weatherLeva, setWeatherLeva] = useControls(
-    'Weather',
+    'Weather & Lighting',
     () => ({
+      currentWeather: {
+        value: DEFAULT_WEATHER.currentWeather as WeatherPreset,
+        options: WEATHER_PRESETS as WeatherPreset[],
+        label: 'Weather Preset',
+      },
       timeOfDay: {
         value: DEFAULT_WEATHER.timeOfDay,
         min: 0,
@@ -29,8 +43,8 @@ export default function WeatherLevaBridge({
       },
       fogDensity: {
         value: DEFAULT_WEATHER.fogDensity,
-        min: 0.006,
-        max: 0.14,
+        min: 0.001,
+        max: 0.18,
         step: 0.001,
         label: 'Fog Density',
       },
@@ -55,15 +69,37 @@ export default function WeatherLevaBridge({
     };
   }, [setWeatherLeva, weatherLevaSetterRef]);
 
+  // When the user picks a new preset, snap the slider mirrors to that preset's
+  // target so the UI reflects the state machine's destination.
+  useEffect(() => {
+    const next = weatherLeva.currentWeather as WeatherPreset;
+    if (next === lastPresetRef.current) return;
+    lastPresetRef.current = next;
+    const t = WEATHER_PRESET_SLIDER_TARGETS[next];
+    if (!t) return;
+    setWeatherLeva({
+      timeOfDay: t.timeOfDay,
+      fogDensity: t.fogDensity,
+      windTurbulence: t.windTurbulence,
+    });
+  }, [weatherLeva.currentWeather, setWeatherLeva]);
+
   useEffect(() => {
     const next = {
       timeOfDay: weatherLeva.timeOfDay,
       fogDensity: weatherLeva.fogDensity,
       windTurbulence: weatherLeva.windTurbulence,
+      currentWeather: weatherLeva.currentWeather as WeatherPreset,
     };
     weatherRef.current = next;
     useWorldStore.getState().setWeather(next);
-  }, [weatherRef, weatherLeva.timeOfDay, weatherLeva.fogDensity, weatherLeva.windTurbulence]);
+  }, [
+    weatherRef,
+    weatherLeva.timeOfDay,
+    weatherLeva.fogDensity,
+    weatherLeva.windTurbulence,
+    weatherLeva.currentWeather,
+  ]);
 
   return null;
 }

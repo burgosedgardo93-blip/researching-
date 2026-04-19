@@ -3,3 +3,68 @@
   height: 100vh;
   position: relative;
 }
+
+/*
+ * Canvas host: pinned to the viewport so the WebGL surface is fully decoupled
+ * from any sibling layout. Without this, the Leva drawer opening/closing can
+ * change the .App content box width and the world briefly shifts or disappears
+ * before R3F re-measures. The explicit ResizeObserver in App.tsx watches this
+ * host and re-issues a single deterministic gl.setSize per layout tick.
+ */
+.canvas-host {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.studio-project-bar {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  font-family: system-ui, sans-serif;
+}
+
+.studio-project-bar__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.studio-project-bar button {
+  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid rgba(80, 60, 40, 0.45);
+  background: rgba(20, 16, 12, 0.82);
+  color: #e8d0b0;
+}
+
+.studio-project-bar button:hover {
+  background: rgba(36, 28, 20, 0.92);
+}
+
+.studio-project-bar__file {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.studio-project-bar__note {
+  font-size: 12px;
+  color: #2a2218;
+  background: rgba(232, 208, 176, 0.92);
+  padding: 4px 8px;
+  border-radius: 4px;
+  max-width: min(360px, 92vw);
+}

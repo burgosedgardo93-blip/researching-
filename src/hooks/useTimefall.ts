@@ -4,17 +4,11 @@ import * as THREE from 'three';
 import type { BuildingData } from './useDecay';
 
 // ── Tuning knobs ──────────────────────────────────────────────────────────────
-const TICK_INTERVAL        = 4;      // seconds between moisture / exposure recalc
-const MOSS_THRESHOLD       = 0.38;   // moisture above this → moss begins
+const TICK_INTERVAL        = 4;      // seconds between exposure recalc
 const WIND_THRESHOLD       = 0.48;   // exposure above this → wind erosion begins
-const MOSS_GROW_RATE       = 0.10;   // moss intensity gain per second
-const MOSS_FADE_RATE       = 0.035;  // moss intensity loss per second
 const WIND_GROW_RATE       = 0.05;   // wind erosion gain per second
 const WIND_FADE_RATE       = 0.018;  // wind erosion loss per second
-const MAX_MOSS             = 0.82;
 const MAX_WIND_DISP        = 0.055;  // peak vertex displacement (world units)
-
-const MOSS_TINT = new THREE.Color('#2e5518');
 
 // ── Smooth lattice noise ──────────────────────────────────────────────────────
 
@@ -62,13 +56,8 @@ interface OrigSnap {
 }
 
 /**
- * Timefall Node — layered weathering that runs alongside useDecay.
- *
- * Every tick the grid is scanned for two conditions:
- *  • **Moisture** (low, sheltered buildings) → moss creeps across the top face.
- *  • **Exposure** (tall, unsheltered buildings) → wind noise eats into the edges.
- *
- * All updates are imperative (vertex colours & positions) — no React re-renders.
+ * Timefall — wind exposure on tall, open buildings (vertex displacement).
+ * Valley moisture and moss shading are handled by {@link useEnvironmentalGrid}.
  */
 export function useTimefall(
   buildings: BuildingData[],
@@ -78,9 +67,7 @@ export function useTimefall(
 ) {
   const n = buildings.length;
 
-  const moisture  = useRef(new Float32Array(n));
   const exposure  = useRef(new Float32Array(n));
-  const mossLevel = useRef(new Float32Array(n));
   const windLevel = useRef(new Float32Array(n));
   const origSnaps = useRef<Array<OrigSnap | null>>(new Array(n).fill(null));
   const timer     = useRef(TICK_INTERVAL);
@@ -93,12 +80,10 @@ export function useTimefall(
     elapsed.current += delta;
     timer.current += delta;
 
-    // Global max height for normalisation
     let maxH = 0;
     for (let k = 0; k < n; k++) if (heightsArr[k] > maxH) maxH = heightsArr[k];
     if (maxH < 0.01) return;
 
-    // ── Tick: recalculate moisture & exposure ─────────────────────────────
     if (timer.current >= TICK_INTERVAL) {
       timer.current -= TICK_INTERVAL;
 
@@ -107,25 +92,16 @@ export function useTimefall(
         const h = heightsArr[k];
         let taller = 0, count = 0;
 
-        const neighbours: number[] = [];
-        if (i > 0)            neighbours.push((i - 1) * gridSize + j);
-        if (i < gridSize - 1) neighbours.push((i + 1) * gridSize + j);
-        if (j > 0)            neighbours.push(i * gridSize + (j - 1));
-        if (j < gridSize - 1) neighbours.push(i * gridSize + (j + 1));
-
-        for (const ni of neighbours) {
-          count++;
-          if (heightsArr[ni] > h + 0.1) taller++;
-        }
+        if (i > 0)            { count++; if (heightsArr[(i - 1) * gridSize + j] > h + 0.1) taller++; }
+        if (i < gridSize - 1) { count++; if (heightsArr[(i + 1) * gridSize + j] > h + 0.1) taller++; }
+        if (j > 0)            { count++; if (heightsArr[i * gridSize + (j - 1)] > h + 0.1) taller++; }
+        if (j < gridSize - 1) { count++; if (heightsArr[i * gridSize + (j + 1)] > h + 0.1) taller++; }
 
         const hRatio  = h / maxH;
-        const shelter = count > 0 ? taller / count : 0;
-        moisture.current[k] = shelter * 0.55 + (1 - hRatio) * 0.45;
         exposure.current[k] = hRatio * 0.55 + (count > 0 ? 1 - taller / count : 1) * 0.45;
       }
     }
 
-    // ── Per-frame visual updates ──────────────────────────────────────────
     const t = elapsed.current;
 
     for (let k = 0; k < n; k++) {
@@ -135,10 +111,8 @@ export function useTimefall(
       const geom     = mesh.geometry;
       const posAttr  = geom.getAttribute('position') as THREE.BufferAttribute | null;
       const normAttr = geom.getAttribute('normal')   as THREE.BufferAttribute | null;
-      const colAttr  = geom.getAttribute('color')    as THREE.BufferAttribute | null;
       if (!posAttr || !normAttr) continue;
 
-      // Snapshot original geometry once
       if (!origSnaps.current[k]) {
         origSnaps.current[k] = {
           positions: new Float32Array(posAttr.array),
@@ -147,79 +121,51 @@ export function useTimefall(
       }
       const snap = origSnaps.current[k]!;
 
-      // ── Ramp moss / wind intensities ────────────────────────────────────
-      mossLevel.current[k] = moisture.current[k] > MOSS_THRESHOLD
-        ? Math.min(MAX_MOSS, mossLevel.current[k] + MOSS_GROW_RATE * delta)
-        : Math.max(0, mossLevel.current[k] - MOSS_FADE_RATE * delta);
-
       windLevel.current[k] = exposure.current[k] > WIND_THRESHOLD
         ? Math.min(1, windLevel.current[k] + WIND_GROW_RATE * delta)
         : Math.max(0, windLevel.current[k] - WIND_FADE_RATE * delta);
 
-      const mLvl = mossLevel.current[k];
       const wLvl = windLevel.current[k];
-      if (mLvl < 0.001 && wLvl < 0.001) continue;
+      if (wLvl < 0.001) continue;
 
       const vCount = posAttr.count;
+      const h     = buildings[k].initialHeight;
+      const halfW = 0.44;
+      const halfD = 0.44;
+      const halfH = h / 2;
+      const disp  = MAX_WIND_DISP * wLvl;
 
-      // ── Moss: tint top-face vertex colours toward deep green ────────────
-      if (mLvl > 0.001 && colAttr) {
-        for (let v = 0; v < vCount; v++) {
-          const origNY = snap.normals[v * 3 + 1];
-          if (origNY > 0.5) {
-            colAttr.setXYZ(
-              v,
-              1 - mLvl * (1 - MOSS_TINT.r),
-              1 - mLvl * (1 - MOSS_TINT.g),
-              1 - mLvl * (1 - MOSS_TINT.b),
-            );
+      for (let v = 0; v < vCount; v++) {
+        const ox = snap.positions[v * 3];
+        const oy = snap.positions[v * 3 + 1];
+        const oz = snap.positions[v * 3 + 2];
+
+        const edgeFactor = Math.max(Math.abs(ox) / halfW, Math.abs(oz) / halfD);
+        const topFactor  = Math.max(0, (oy + halfH) / h);
+        const weight     = edgeFactor * topFactor * topFactor;
+
+        if (weight > 0.25) {
+          const nv  = fbm(ox * 7 + t * 0.08, oy * 7, oz * 7 + t * 0.04);
+          const onx = snap.normals[v * 3];
+          const onz = snap.normals[v * 3 + 2];
+          const amt = nv * disp * weight;
+
+          posAttr.setX(v, ox + onx * amt);
+          posAttr.setZ(v, oz + onz * amt);
+
+          if (topFactor > 0.65) {
+            const yErode = Math.abs(nv) * disp * 0.4 * ((topFactor - 0.65) / 0.35);
+            posAttr.setY(v, oy - yErode);
           } else {
-            colAttr.setXYZ(v, 1, 1, 1);
+            posAttr.setY(v, oy);
           }
+        } else {
+          posAttr.setXYZ(v, ox, oy, oz);
         }
-        colAttr.needsUpdate = true;
       }
 
-      // ── Wind erosion: displace upper-edge vertices with noise ───────────
-      if (wLvl > 0.001) {
-        const h     = buildings[k].initialHeight;
-        const halfW = 0.44;
-        const halfD = 0.44;
-        const halfH = h / 2;
-        const disp  = MAX_WIND_DISP * wLvl;
-
-        for (let v = 0; v < vCount; v++) {
-          const ox = snap.positions[v * 3];
-          const oy = snap.positions[v * 3 + 1];
-          const oz = snap.positions[v * 3 + 2];
-
-          const edgeFactor = Math.max(Math.abs(ox) / halfW, Math.abs(oz) / halfD);
-          const topFactor  = Math.max(0, (oy + halfH) / h);
-          const weight     = edgeFactor * topFactor * topFactor;
-
-          if (weight > 0.25) {
-            const nv  = fbm(ox * 7 + t * 0.08, oy * 7, oz * 7 + t * 0.04);
-            const onx = snap.normals[v * 3];
-            const onz = snap.normals[v * 3 + 2];
-            const amt = nv * disp * weight;
-
-            posAttr.setX(v, ox + onx * amt);
-            posAttr.setZ(v, oz + onz * amt);
-
-            if (topFactor > 0.65) {
-              const yErode = Math.abs(nv) * disp * 0.4 * ((topFactor - 0.65) / 0.35);
-              posAttr.setY(v, oy - yErode);
-            } else {
-              posAttr.setY(v, oy);
-            }
-          } else {
-            posAttr.setXYZ(v, ox, oy, oz);
-          }
-        }
-
-        posAttr.needsUpdate = true;
-        geom.computeVertexNormals();
-      }
+      posAttr.needsUpdate = true;
+      geom.computeVertexNormals();
     }
   });
 }
