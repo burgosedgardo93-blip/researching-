@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { shaderMaterial } from '@react-three/drei';
 import { extend } from '@react-three/fiber';
 import { windDirection } from '../environment/windDirection';
+import { srgbColor } from '../utils/srgbColor';
 
 const ErosionMaterial = shaderMaterial(
   {
@@ -13,9 +14,9 @@ const ErosionMaterial = shaderMaterial(
     uMoisture: 0,
     /** Scales how strongly `uSandColor` is mixed in (Leva: Sand Storm Intensity). */
     uSandStorm: 1,
-    uSandColor: new THREE.Color('#d2b48c'), // Dune Sand
-    uMossColor: new THREE.Color('#2d3c2d'), // Death Stranding Moss
-    uStoneColor: new THREE.Color('#1a1a1a'), // Dark Brutalist Concrete
+    uSandColor: srgbColor('#d2b48c'), // Dune Sand
+    uMossColor: srgbColor('#2d3c2d'), // Death Stranding Moss
+    uStoneColor: srgbColor('#1a1a1a'), // Dark Brutalist Concrete
     /** 0..1 — wind-shadow sand accumulation ({@link useEnvironmentalGrid}) */
     uSandAccum:  0,
     /** 0..1 — vertical sand layer strength; high values bury moss (dusty ruin) */
@@ -33,7 +34,7 @@ const ErosionMaterial = shaderMaterial(
     /** 0..1 — brush influence glow driven by RelicBox when cursor is over this relic. */
     uBrushActive: 0,
     /** Thermal glow color: orange for sand/erode, green for moss/restore. */
-    uBrushColor: new THREE.Color('#ff6b1a'),
+    uBrushColor: srgbColor('#ff6b1a'),
     /** World-space pedestal lift from the RAISE_TERRAIN brush — applied after local displacement. */
     uBaseElevation: 0,
   },

@@ -2,9 +2,10 @@ import React, { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { GaeaParamsRef } from '../gaea/gaeaParams';
+import { srgbColor } from '../utils/srgbColor';
 
-const STONE_COLOR = new THREE.Color('#121212');
-const SAND_COLOR = new THREE.Color('#c2a382');
+const STONE_COLOR = srgbColor('#121212');
+const SAND_COLOR = srgbColor('#c2a382');
 const SCATTER_RADIUS = 1.5;
 const INTEGRITY_THRESHOLD = 0.6;
 

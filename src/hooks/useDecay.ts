@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { GaeaParamsRef } from '../gaea/gaeaParams';
+import { srgbColor, tagSrgb } from '../utils/srgbColor';
 
 /** Seconds between stress map recalculations */
 const STRESS_INTERVAL = 4;
@@ -12,10 +13,10 @@ const ERODE_SPEED = 0.12;
 /** Floor height a building will never erode below */
 export const MIN_HEIGHT = 0.2;
 
-const COLOR_HEALTHY  = new THREE.Color('#c4b69c');  // sand-blasted concrete (match RelicBox)
-const COLOR_ERODED   = new THREE.Color('#8a7356');  // weathered sandstone
-const COLOR_BLACK    = new THREE.Color(0, 0, 0);
-const COLOR_EMISSIVE = new THREE.Color('#5c4020');  // warm dust glow
+const COLOR_HEALTHY  = srgbColor('#c4b69c');  // sand-blasted concrete (match RelicBox)
+const COLOR_ERODED   = srgbColor('#8a7356');  // weathered sandstone
+const COLOR_BLACK    = tagSrgb(new THREE.Color(0, 0, 0));
+const COLOR_EMISSIVE = srgbColor('#5c4020');  // warm dust glow
 
 export interface BuildingData {
   i: number;

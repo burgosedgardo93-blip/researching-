@@ -1,17 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { GaeaParamsRef, BrushMode } from '../gaea/gaeaParams';
 import type { BrushPaintFeedbackRef } from './BrushPaintSurface';
 import { useWorldStore } from '../state/worldStore';
 import { windDirection } from '../environment/windDirection';
-import { loadPublicMatcapTexture } from '../utils/loadPublicTexture';
-
-/** Vite `base` — must prefix public-dir URLs so subpath deploys resolve textures. */
-const STUDIO_MATCAP_PATH = `${import.meta.env.BASE_URL}textures/matcap_grit.jpg`;
+import { srgbColor } from '../utils/srgbColor';
 
 /**
- * One mesh, one draw call, one shader for every relic in the grid.
+ * One mesh, one draw call for every relic in the grid.
  *
  * Replaces the per-cell `<RelicBox>` map plus the `<BuildingBrushFeedback>`
  * sibling. Per-cell state (sand, moss, integrity, distortion, base
@@ -19,10 +16,13 @@ const STUDIO_MATCAP_PATH = `${import.meta.env.BASE_URL}textures/matcap_grit.jpg`
  * attributes; per-cell positions, scales, and brush-wobble offsets are
  * baked into the per-frame `instanceMatrix`.
  *
- * The shader handles all three view modes (Cinema erosion shading, Studio
- * normal-as-RGB matcap, Data View RGB diagnostic) via `uViewMode`, so we
- * never swap materials per instance — that lets the entire grid render in
- * a single GPU command.
+ * Material selection is driven by `worldStore.viewMode`:
+ *  - STUDIO  → `MeshNormalMaterial` (high-contrast geometric read-out, no FS work).
+ *  - CINEMA  → weathered erosion `ShaderMaterial` (sand/moss/crevices/grain).
+ *  - DATA    → same `ShaderMaterial` with `uViewMode=2` for the RGB diagnostic.
+ *
+ * The Studio swap happens in the per-frame loop, so a Leva `View Mode` flip
+ * takes effect on the very next frame — no component remount, no reload.
  */
 
 const BOX_W = 0.88;
@@ -30,8 +30,8 @@ const BOX_D = 0.88;
 const BOX_SEGMENTS = 32;
 const MIN_INSTANCE_SCALE_Y = 0.01;
 
-const BRUSH_GLOW_ORANGE = /* @__PURE__ */ new THREE.Color('#ff6b1a');
-const BRUSH_GLOW_GREEN = /* @__PURE__ */ new THREE.Color('#4a8f5a');
+const BRUSH_GLOW_ORANGE = /* @__PURE__ */ srgbColor('#ff6b1a');
+const BRUSH_GLOW_GREEN = /* @__PURE__ */ srgbColor('#4a8f5a');
 
 function brushGlowColor(mode: BrushMode): THREE.Color {
   return mode === 'PAINT_MOSS' || mode === 'RESTORE' || mode === 'SOW_FLORA'
@@ -253,11 +253,10 @@ const FS = /* glsl */ `
   uniform vec3  uStoneColor;
   uniform vec2  uWindDir;
   uniform vec3  uBrushColor;
-  uniform sampler2D uStudioMatcap;
-  uniform int uStudioMatcapOk;
 
-  // 0 = Cinema (full erosion shader), 1 = Studio (normal-as-RGB matcap),
-  // 2 = Data View (integrity/sand/moss diagnostic).
+  // 0 = Cinema (full erosion shader), 2 = Data View (integrity/sand/moss
+  // diagnostic). Studio bypasses this shader entirely and renders with
+  // MeshNormalMaterial, so value 1 is intentionally unused.
   uniform int uViewMode;
 
   varying vec3 vNormal;
@@ -268,19 +267,6 @@ const FS = /* glsl */ `
   varying float vBrushActive;
   varying float vSandTopY;
   varying float vSandBaseY;
-
-  // ── Studio matcap: optional matcap texture (see STUDIO_MATCAP_PATH) in
-  //    view-normal UV space; otherwise normal * 0.5 + 0.5 procedural read. ──
-  vec3 studioShade() {
-    if (uStudioMatcapOk == 1) {
-      vec3 nv = normalize(vNormal);
-      vec2 muv = nv.xy * 0.5 + 0.5;
-      vec3 mc = texture2D(uStudioMatcap, muv).rgb;
-      return mc + uBrushColor * vBrushActive * 1.0;
-    }
-    vec3 base = vNormal * 0.5 + 0.5;
-    return base + uBrushColor * vBrushActive * 1.0;
-  }
 
   // ── Data View: R = damage, G = sand mix, B = moss density. Matches the
   //    legacy setDataViewBasicColor JS color formula. ──
@@ -402,9 +388,7 @@ const FS = /* glsl */ `
 
   void main() {
     vec3 col;
-    if (uViewMode == 1) {
-      col = studioShade();
-    } else if (uViewMode == 2) {
+    if (uViewMode == 2) {
       col = dataViewShade();
     } else {
       col = cinemaShade();
@@ -432,14 +416,11 @@ export default function InstancedRelicGrid({
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const N = cells.length;
 
-  // Subscribe so a Studio↔Cinema flip rebinds the uniform reactively
-  // (the per-frame writer below also keeps it in sync).
+  // Subscribe so a Studio↔Cinema flip rerenders this component and the per-frame
+  // material swap below trips on the very next tick (no page reload, no remount).
   const viewMode = useWorldStore(s => s.viewMode);
 
-  /** When the matcap asset is missing (e.g. bad deploy path), Studio uses MeshNormalMaterial. */
-  const [studioMatcapFailed, setStudioMatcapFailed] = useState(false);
-
-  const { geometry, material, attrs, placeholderMatcapTex } = useMemo(() => {
+  const { geometry, material, attrs } = useMemo(() => {
     const geom = new THREE.BoxGeometry(
       1,
       1,
@@ -479,23 +460,16 @@ export default function InstancedRelicGrid({
     geom.setAttribute('aSand', aSand);
     geom.setAttribute('aMoss', aMoss);
 
-    const px = new Uint8Array([128, 128, 128, 255]);
-    const placeholderMatcapTex = new THREE.DataTexture(px, 1, 1, THREE.RGBAFormat);
-    placeholderMatcapTex.needsUpdate = true;
-    placeholderMatcapTex.colorSpace = THREE.SRGBColorSpace;
-
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
         uSandStorm: { value: 1 },
-        uSandColor: { value: new THREE.Color('#c2a382') },
-        uMossColor: { value: new THREE.Color('#1b2e1b') },
-        uStoneColor: { value: new THREE.Color('#121212') },
+        uSandColor: { value: srgbColor('#c2a382') },
+        uMossColor: { value: srgbColor('#1b2e1b') },
+        uStoneColor: { value: srgbColor('#121212') },
         uWindDir: { value: new THREE.Vector2(windDirection.x, windDirection.y) },
-        uBrushColor: { value: new THREE.Color('#ff6b1a') },
+        uBrushColor: { value: srgbColor('#ff6b1a') },
         uViewMode: { value: 0 },
-        uStudioMatcap: { value: placeholderMatcapTex },
-        uStudioMatcapOk: { value: 0 },
       },
       vertexShader: VS,
       fragmentShader: FS,
@@ -504,7 +478,6 @@ export default function InstancedRelicGrid({
     return {
       geometry: geom,
       material: mat,
-      placeholderMatcapTex,
       attrs: {
         aInitH,
         aIntegrity,
@@ -518,46 +491,15 @@ export default function InstancedRelicGrid({
     };
   }, [N, cells]);
 
-  const normalFallbackMat = useMemo(
-    () =>
-      new THREE.MeshNormalMaterial({
-        flatShading: false,
-      }),
+  /**
+   * Studio material — `MeshNormalMaterial` renders world-space normals as RGB.
+   * Zero shader work, zero uniforms to sync, so flipping into Studio gives an
+   * instant FPS uplift while keeping a high-contrast read of the silhouette.
+   */
+  const studioMat = useMemo(
+    () => new THREE.MeshNormalMaterial({ flatShading: false }),
     [],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    let loadedTex: THREE.Texture | null = null;
-    let placeholderDisposed = false;
-    const mat = material;
-    loadPublicMatcapTexture(
-      STUDIO_MATCAP_PATH,
-      (tex) => {
-        if (cancelled) {
-          tex.dispose();
-          return;
-        }
-        loadedTex = tex;
-        if (!(mat instanceof THREE.ShaderMaterial)) return;
-        const prev = mat.uniforms.uStudioMatcap?.value as THREE.Texture | undefined;
-        mat.uniforms.uStudioMatcap.value = tex;
-        mat.uniforms.uStudioMatcapOk.value = 1;
-        if (prev && prev !== tex) {
-          prev.dispose();
-          placeholderDisposed = true;
-        }
-      },
-      () => {
-        if (!cancelled) setStudioMatcapFailed(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-      loadedTex?.dispose();
-      if (!placeholderDisposed) placeholderMatcapTex.dispose();
-    };
-  }, [material, placeholderMatcapTex]);
 
   // Smoothed per-cell glow + sanding so brush impulses feel inertial instead
   // of strobing on/off as the mouse moves through a cell.
@@ -588,31 +530,32 @@ export default function InstancedRelicGrid({
     return () => {
       geometry.dispose();
       material.dispose();
-      normalFallbackMat.dispose();
+      studioMat.dispose();
     };
-  }, [geometry, material, normalFallbackMat]);
+  }, [geometry, material, studioMat]);
 
-  // Keep the view-mode uniform reactive too. Per-frame loop also writes it,
-  // so this is just defensive against the first frame after toggle.
+  // React-driven material swap. The zustand subscription above re-renders this
+  // component on every View-Mode flip; assigning `mesh.material` here makes
+  // the toggle land on the next flush instead of waiting for a frame.
+  // Data View overrides Studio because the diagnostic lives in the shader.
   useEffect(() => {
-    const u = material.uniforms;
-    u.uViewMode.value = viewMode === 'STUDIO' ? 1 : 0;
-  }, [material, viewMode]);
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const wantStudio = viewMode === 'STUDIO' && !gaeaRef.current.dataView;
+    mesh.material = wantStudio ? studioMat : material;
+  }, [viewMode, material, studioMat, gaeaRef]);
 
   useFrame((state, delta) => {
     const mesh = meshRef.current;
     if (!mesh) return;
 
-    const wantNormalFallback =
-      studioMatcapFailed &&
-      viewMode === 'STUDIO' &&
-      !gaeaRef.current.dataView;
-
-    if (wantNormalFallback) {
-      if (mesh.material !== normalFallbackMat) mesh.material = normalFallbackMat;
-    } else if (mesh.material !== material) {
-      mesh.material = material;
-    }
+    // Per-frame selector: covers Data-View toggles (read through gaeaRef, not
+    // re-rendered) and guarantees the mesh settles on the right material even
+    // if a frame ran before the useEffect above committed.
+    const dataView = gaeaRef.current.dataView;
+    const wantStudio = gaeaRef.current.viewMode === 'STUDIO' && !dataView;
+    const targetMat = wantStudio ? studioMat : material;
+    if (mesh.material !== targetMat) mesh.material = targetMat;
 
     const H = heightsRef.current;
     const S = sandRef.current;
@@ -620,14 +563,11 @@ export default function InstancedRelicGrid({
     const D = distortionRef.current;
     const BE = baseElevationRef.current;
 
-    const u = material.uniforms;
     if (mesh.material === material) {
+      const u = material.uniforms;
       u.uTime.value = state.clock.elapsedTime;
       u.uSandStorm.value = Math.max(0, gaeaRef.current.sandStormIntensity);
-
-      const dataView = gaeaRef.current.dataView;
-      const studio = gaeaRef.current.viewMode === 'STUDIO';
-      u.uViewMode.value = dataView ? 2 : studio ? 1 : 0;
+      u.uViewMode.value = dataView ? 2 : 0;
       (u.uBrushColor.value as THREE.Color).copy(brushGlowColor(gaeaRef.current.brushMode));
     }
 

@@ -1,0 +1,23 @@
+---
+description: Three.js r160+ SRGB compliance
+globs: src/**/*.{ts,tsx}
+alwaysApply: true
+---
+
+# Three.js r160+ SRGB Compliance
+
+Always check for r160+ Three.js compliance, specifically ensuring
+SRGBColorSpace is used for all color outputs. This prevents the
+"washed out" look common in production builds.
+
+Concrete checklist when authoring or reviewing rendering code:
+- Renderer: `gl.outputColorSpace = THREE.SRGBColorSpace` and
+  `THREE.ColorManagement.enabled = true` (set once in the Canvas `onCreated`).
+- Color textures (albedo / map / matcap): `tex.colorSpace = THREE.SRGBColorSpace`.
+  Data textures (normal, roughness, AO, metalness, height) stay `THREE.NoColorSpace`.
+- Any `new THREE.Color('#hex')` destined for a `ShaderMaterial` uniform OR a
+  light/fog/background must be tagged: `color.colorSpace = THREE.SRGBColorSpace`.
+  Use the shared helpers in `src/utils/srgbColor.ts` (`srgbColor(hex)` /
+  `tagSrgb(color)`) — do not duplicate the tagging dance.
+- Never call the legacy `tex.encoding = sRGBEncoding` or `renderer.outputEncoding`
+  APIs — they were removed in r160.

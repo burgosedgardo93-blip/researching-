@@ -10,6 +10,7 @@ import type {
 } from '../gaea/weatherParams';
 import { SANDSTORM_LEVA_ENDPOINT } from '../gaea/weatherParams';
 import { useWorldStore } from '../state/worldStore';
+import { tagSrgb } from '../utils/srgbColor';
 
 /** State-machine transition length when `currentWeather` flips. */
 const PRESET_LERP_DURATION = 2.0;
@@ -23,15 +24,6 @@ const _cOut = new THREE.Color();
 function easeInOut(t: number): number {
   const x = THREE.MathUtils.clamp(t, 0, 1);
   return x * x * (3 - 2 * x);
-}
-
-/** Tag a Color as living in sRGB so r160+ tone-mapping treats it correctly. */
-function srgb(color: THREE.Color): THREE.Color {
-  if ('SRGBColorSpace' in THREE && 'colorSpace' in color) {
-    (color as THREE.Color & { colorSpace?: string }).colorSpace =
-      (THREE as unknown as { SRGBColorSpace: string }).SRGBColorSpace;
-  }
-  return color;
 }
 
 function lerpColorHex(a: string, b: string, t: number): string {
@@ -207,7 +199,7 @@ export default function WeatherLighting({
   const dirRef = useRef<THREE.DirectionalLight>(null);
   const fog = useMemo(() => {
     const f = new THREE.FogExp2('#121214', 0.036);
-    srgb(f.color);
+    tagSrgb(f.color);
     return f;
   }, []);
   const { gl, scene } = useThree();
@@ -318,7 +310,7 @@ export default function WeatherLighting({
     resolvedWeatherRef.current = next;
 
     fog.color.set(next.fogColor);
-    srgb(fog.color);
+    tagSrgb(fog.color);
     fog.density = next.fogDensity;
 
     gl.setClearColor(next.background, 1);
@@ -327,7 +319,7 @@ export default function WeatherLighting({
     if (dir) {
       dir.position.set(next.sunX, next.sunY, next.sunZ);
       dir.color.set(next.sunColor);
-      srgb(dir.color);
+      tagSrgb(dir.color);
       dir.intensity = next.sunIntensity;
     }
   });

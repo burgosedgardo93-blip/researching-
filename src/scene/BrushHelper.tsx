@@ -2,15 +2,16 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { BrushMode, GaeaParamsRef } from '../gaea/gaeaParams';
+import { srgbColor } from '../utils/srgbColor';
 
 const RING_COLORS: Record<BrushMode, THREE.Color> = {
-  PAINT_SAND: /* @__PURE__ */ new THREE.Color('#e8c896'),
-  PAINT_MOSS: /* @__PURE__ */ new THREE.Color('#4a8f5a'),
-  ERODE: /* @__PURE__ */ new THREE.Color('#ff6b1a'),
-  RESTORE: /* @__PURE__ */ new THREE.Color('#6ec8e8'),
-  RAISE_TERRAIN: /* @__PURE__ */ new THREE.Color('#b1775a'),
-  BASE_ELEVATION: /* @__PURE__ */ new THREE.Color('#a36848'),
-  SOW_FLORA: /* @__PURE__ */ new THREE.Color('#9dbf88'),
+  PAINT_SAND: /* @__PURE__ */ srgbColor('#e8c896'),
+  PAINT_MOSS: /* @__PURE__ */ srgbColor('#4a8f5a'),
+  ERODE: /* @__PURE__ */ srgbColor('#ff6b1a'),
+  RESTORE: /* @__PURE__ */ srgbColor('#6ec8e8'),
+  RAISE_TERRAIN: /* @__PURE__ */ srgbColor('#b1775a'),
+  BASE_ELEVATION: /* @__PURE__ */ srgbColor('#a36848'),
+  SOW_FLORA: /* @__PURE__ */ srgbColor('#9dbf88'),
 };
 
 /** Unit ring (outer = 1); scaled in `useFrame` by {@link GaeaParams.brushSize}. */

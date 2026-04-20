@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ResolvedWeatherRef } from '../gaea/weatherParams';
 import { useWorldStore } from '../state/worldStore';
+import { srgbColor } from '../utils/srgbColor';
 
 /**
  * Instanced alien grass — Death Stranding–style low-contrast moss blades.
@@ -122,8 +123,8 @@ export default function AlienGrassInstanced({
       uniforms: {
         uTime: { value: 0 },
         uWindTurbulence: { value: 1 },
-        uBase: { value: new THREE.Color('#22341f') },
-        uTip: { value: new THREE.Color('#9dbf88') },
+        uBase: { value: srgbColor('#22341f') },
+        uTip: { value: srgbColor('#9dbf88') },
       },
       vertexShader: VS,
       fragmentShader: FS,

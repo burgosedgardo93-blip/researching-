@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { windDirection } from '../environment/windDirection';
 import type { GaeaParamsRef } from '../gaea/gaeaParams';
 import type { ResolvedWeatherRef } from '../gaea/weatherParams';
+import { srgbColor } from '../utils/srgbColor';
 
 /**
  * Unified airborne particle field — replaces the separate `DustParticles` (embers)
@@ -193,10 +194,10 @@ export default function AtmosphereParticles({
         uWindDir: { value: new THREE.Vector2(windDirection.x, windDirection.y) },
         uBoundsMin: { value: new THREE.Vector3(X_MIN, Y_MIN, Z_MIN) },
         uBoundsMax: { value: new THREE.Vector3(X_MAX, Y_MAX, Z_MAX) },
-        uDark: { value: new THREE.Color('#0a0806') },
-        uSand: { value: new THREE.Color('#c9a070') },
-        uGlint: { value: new THREE.Color('#ffd4a8') },
-        uStreak: { value: new THREE.Color('#d8c8a8') },
+        uDark: { value: srgbColor('#0a0806') },
+        uSand: { value: srgbColor('#c9a070') },
+        uGlint: { value: srgbColor('#ffd4a8') },
+        uStreak: { value: srgbColor('#d8c8a8') },
       },
       vertexShader: VS,
       fragmentShader: FS,

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { ErosionMaterial } from './ErosionMaterial';
 import type { BrushMode, GaeaParamsRef } from '../gaea/gaeaParams';
 import type { BrushPaintFeedbackRef } from './BrushPaintSurface';
+import { srgbColor } from '../utils/srgbColor';
 
 extend({ ErosionMaterial });
 
@@ -98,7 +99,7 @@ interface StudioMatCapHandle {
 
 function makeStudioMatCapMaterial(): StudioMatCapHandle {
   const uGlow = { value: 0 };
-  const uGlowColor = { value: new THREE.Color('#ff6b1a') };
+  const uGlowColor = { value: srgbColor('#ff6b1a') };
   const uBaseElevation = { value: 0 };
   const mat = new THREE.ShaderMaterial({
     uniforms: {
@@ -113,8 +114,8 @@ function makeStudioMatCapMaterial(): StudioMatCapHandle {
   return { mat, uGlow, uGlowColor, uBaseElevation };
 }
 
-const BRUSH_GLOW_ORANGE = /* @__PURE__ */ new THREE.Color('#ff6b1a');
-const BRUSH_GLOW_GREEN  = /* @__PURE__ */ new THREE.Color('#4a8f5a');
+const BRUSH_GLOW_ORANGE = /* @__PURE__ */ srgbColor('#ff6b1a');
+const BRUSH_GLOW_GREEN  = /* @__PURE__ */ srgbColor('#4a8f5a');
 
 function brushGlowColor(mode: BrushMode): THREE.Color {
   return mode === 'PAINT_MOSS' || mode === 'RESTORE' || mode === 'SOW_FLORA'
