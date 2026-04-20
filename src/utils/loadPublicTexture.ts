@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
 /**
- * Loads a texture from an absolute site-root path (e.g. `/textures/foo.jpg`
- * served from `public/textures/foo.jpg`). Invokes `onError` on failure so the
+ * Loads a texture from a URL built with `import.meta.env.BASE_URL` + path under
+ * `public/` (for example BASE_URL + `textures/foo.jpg` → `public/textures/foo.jpg`).
+ * Invokes `onError` on failure so the
  * caller can fall back to a non-textured material and keep the canvas visible.
  */
 export function loadPublicMatcapTexture(

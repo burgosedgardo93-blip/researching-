@@ -7,7 +7,8 @@ import { useWorldStore } from '../state/worldStore';
 import { windDirection } from '../environment/windDirection';
 import { loadPublicMatcapTexture } from '../utils/loadPublicTexture';
 
-const STUDIO_MATCAP_PATH = '/textures/matcap_grit.jpg';
+/** Vite `base` — must prefix public-dir URLs so subpath deploys resolve textures. */
+const STUDIO_MATCAP_PATH = `${import.meta.env.BASE_URL}textures/matcap_grit.jpg`;
 
 /**
  * One mesh, one draw call, one shader for every relic in the grid.
