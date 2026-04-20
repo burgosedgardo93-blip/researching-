@@ -19,6 +19,7 @@ import InstancedRelicGrid from './InstancedRelicGrid';
 import type { BakeFlashHandle } from './BakeFlashCue';
 import DebrisManager, { type DebrisManagerHandle } from './DebrisManager';
 import type { GaeaParamsRef } from '../gaea/gaeaParams';
+import { DEFAULT_VISIBLE_PROJECT_SEED } from '../gaea/gaeaParams';
 import type { ResolvedWeatherRef } from '../gaea/weatherParams';
 import {
   parseRelicProjectV1,
@@ -51,7 +52,7 @@ const BAKE_ENVIRONMENT_STEPS = 50;
 const PROCESS_EROSION_STEPS = 50;
 
 /** Default project seed used whenever the app boots without a saved project. */
-const DEFAULT_PROJECT_SEED = 1;
+const DEFAULT_PROJECT_SEED = DEFAULT_VISIBLE_PROJECT_SEED;
 
 interface Building extends BuildingData {
   key: string;
@@ -76,9 +77,10 @@ export function generateDefaultState(
   seed: number = DEFAULT_PROJECT_SEED,
 ): Building[] {
   const items: Building[] = [];
-  const center = (gridSize - 1) / 2;
-  for (let i = 0; i < gridSize; i++) {
-    for (let j = 0; j < gridSize; j++) {
+  const G = Math.max(1, Math.floor(gridSize));
+  const center = (G - 1) / 2;
+  for (let i = 0; i < G; i++) {
+    for (let j = 0; j < G; j++) {
       const x = (i - center) * STEP;
       const z = (j - center) * STEP;
 
@@ -441,6 +443,9 @@ export default function TileMap({
     };
   }, [buildings, distortionRef, gaeaRef, heightsRef, mossRef, sandRef, studioBridgeRef]);
 
+  // Bake / processErosion only run from Leva button handlers (refs above). This
+  // loop applies updateEnvironment when the History time slider moves — not
+  // the heavy bake / deposition passes.
   useFrame(() => {
     const target = Math.round(gaeaRef.current.time);
     if (target === appliedTime.current) return;
@@ -522,24 +527,28 @@ export default function TileMap({
         STUDIO/CINEMA/DATA_VIEW so we never swap materials.
       */}
       <group ref={mapShakeRef}>
-        <InstancedRelicGrid
-          cells={buildings}
-          heightsRef={heightsRef}
-          sandRef={sandRef}
-          mossRef={mossRef}
-          distortionRef={distortionRef}
-          baseElevationRef={baseElevationRef}
-          gaeaRef={gaeaRef}
-          paintFeedbackRef={paintFeedbackRef}
-          cursorRef={cursorRef}
-        />
+        {buildings.length > 0 ? (
+          <InstancedRelicGrid
+            cells={buildings}
+            heightsRef={heightsRef}
+            sandRef={sandRef}
+            mossRef={mossRef}
+            distortionRef={distortionRef}
+            baseElevationRef={baseElevationRef}
+            gaeaRef={gaeaRef}
+            paintFeedbackRef={paintFeedbackRef}
+            cursorRef={cursorRef}
+          />
+        ) : null}
       </group>
-      <BuildingLabel
-        building={buildings[tallestIdx]}
-        index={tallestIdx}
-        heightsRef={heightsRef}
-        mossRef={mossRef}
-      />
+      {buildings.length > 0 ? (
+        <BuildingLabel
+          building={buildings[tallestIdx]}
+          index={tallestIdx}
+          heightsRef={heightsRef}
+          mossRef={mossRef}
+        />
+      ) : null}
       <BrushHelper
         cursorRef={cursorRef}
         visibleRef={visibleRef}
