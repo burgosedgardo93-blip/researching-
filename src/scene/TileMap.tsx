@@ -140,7 +140,7 @@ function BuildingLabel({
     const integrity = Math.max(0, Math.min(100, (h / building.initialHeight) * 100));
     const moisture = Math.max(0, Math.min(100, mossRef.current[index] * 100));
 
-    el.textContent = `INT ${integrity.toFixed(0)}%  ·  MST ${moisture.toFixed(0)}%`;
+    el.textContent = `Struct ${integrity.toFixed(0)}%  ·  Wet ${moisture.toFixed(0)}%`;
 
     if (groupRef.current) {
       groupRef.current.position.y = h + 0.4;
