@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { GaeaParamsRef, BrushMode } from '../gaea/gaeaParams';
 import type { BrushPaintFeedbackRef } from './BrushPaintSurface';
 import { useWorldStore } from '../state/worldStore';
 import { windDirection } from '../environment/windDirection';
+import { loadPublicMatcapTexture } from '../utils/loadPublicTexture';
+
+const STUDIO_MATCAP_PATH = '/textures/matcap_grit.jpg';
 
 /**
  * One mesh, one draw call, one shader for every relic in the grid.
@@ -249,6 +252,8 @@ const FS = /* glsl */ `
   uniform vec3  uStoneColor;
   uniform vec2  uWindDir;
   uniform vec3  uBrushColor;
+  uniform sampler2D uStudioMatcap;
+  uniform int uStudioMatcapOk;
 
   // 0 = Cinema (full erosion shader), 1 = Studio (normal-as-RGB matcap),
   // 2 = Data View (integrity/sand/moss diagnostic).
@@ -263,9 +268,15 @@ const FS = /* glsl */ `
   varying float vSandTopY;
   varying float vSandBaseY;
 
-  // ── Studio matcap: faces colored by view-space normal + per-instance
-  //    brush emissive. Razor-sharp geometric read for sculpting. ──
+  // ── Studio matcap: optional matcap texture (see STUDIO_MATCAP_PATH) in
+  //    view-normal UV space; otherwise normal * 0.5 + 0.5 procedural read. ──
   vec3 studioShade() {
+    if (uStudioMatcapOk == 1) {
+      vec3 nv = normalize(vNormal);
+      vec2 muv = nv.xy * 0.5 + 0.5;
+      vec3 mc = texture2D(uStudioMatcap, muv).rgb;
+      return mc + uBrushColor * vBrushActive * 1.0;
+    }
     vec3 base = vNormal * 0.5 + 0.5;
     return base + uBrushColor * vBrushActive * 1.0;
   }
@@ -424,7 +435,10 @@ export default function InstancedRelicGrid({
   // (the per-frame writer below also keeps it in sync).
   const viewMode = useWorldStore(s => s.viewMode);
 
-  const { geometry, material, attrs } = useMemo(() => {
+  /** When the matcap asset is missing (e.g. bad deploy path), Studio uses MeshNormalMaterial. */
+  const [studioMatcapFailed, setStudioMatcapFailed] = useState(false);
+
+  const { geometry, material, attrs, placeholderMatcapTex } = useMemo(() => {
     const geom = new THREE.BoxGeometry(
       1,
       1,
@@ -464,6 +478,11 @@ export default function InstancedRelicGrid({
     geom.setAttribute('aSand', aSand);
     geom.setAttribute('aMoss', aMoss);
 
+    const px = new Uint8Array([128, 128, 128, 255]);
+    const placeholderMatcapTex = new THREE.DataTexture(px, 1, 1, THREE.RGBAFormat);
+    placeholderMatcapTex.needsUpdate = true;
+    placeholderMatcapTex.colorSpace = THREE.SRGBColorSpace;
+
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
@@ -474,6 +493,8 @@ export default function InstancedRelicGrid({
         uWindDir: { value: new THREE.Vector2(windDirection.x, windDirection.y) },
         uBrushColor: { value: new THREE.Color('#ff6b1a') },
         uViewMode: { value: 0 },
+        uStudioMatcap: { value: placeholderMatcapTex },
+        uStudioMatcapOk: { value: 0 },
       },
       vertexShader: VS,
       fragmentShader: FS,
@@ -482,6 +503,7 @@ export default function InstancedRelicGrid({
     return {
       geometry: geom,
       material: mat,
+      placeholderMatcapTex,
       attrs: {
         aInitH,
         aIntegrity,
@@ -494,6 +516,47 @@ export default function InstancedRelicGrid({
       },
     };
   }, [N, cells]);
+
+  const normalFallbackMat = useMemo(
+    () =>
+      new THREE.MeshNormalMaterial({
+        flatShading: false,
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    let loadedTex: THREE.Texture | null = null;
+    let placeholderDisposed = false;
+    const mat = material;
+    loadPublicMatcapTexture(
+      STUDIO_MATCAP_PATH,
+      (tex) => {
+        if (cancelled) {
+          tex.dispose();
+          return;
+        }
+        loadedTex = tex;
+        if (!(mat instanceof THREE.ShaderMaterial)) return;
+        const prev = mat.uniforms.uStudioMatcap?.value as THREE.Texture | undefined;
+        mat.uniforms.uStudioMatcap.value = tex;
+        mat.uniforms.uStudioMatcapOk.value = 1;
+        if (prev && prev !== tex) {
+          prev.dispose();
+          placeholderDisposed = true;
+        }
+      },
+      () => {
+        if (!cancelled) setStudioMatcapFailed(true);
+      },
+    );
+    return () => {
+      cancelled = true;
+      loadedTex?.dispose();
+      if (!placeholderDisposed) placeholderMatcapTex.dispose();
+    };
+  }, [material, placeholderMatcapTex]);
 
   // Smoothed per-cell glow + sanding so brush impulses feel inertial instead
   // of strobing on/off as the mouse moves through a cell.
@@ -524,8 +587,9 @@ export default function InstancedRelicGrid({
     return () => {
       geometry.dispose();
       material.dispose();
+      normalFallbackMat.dispose();
     };
-  }, [geometry, material]);
+  }, [geometry, material, normalFallbackMat]);
 
   // Keep the view-mode uniform reactive too. Per-frame loop also writes it,
   // so this is just defensive against the first frame after toggle.
@@ -538,6 +602,17 @@ export default function InstancedRelicGrid({
     const mesh = meshRef.current;
     if (!mesh) return;
 
+    const wantNormalFallback =
+      studioMatcapFailed &&
+      viewMode === 'STUDIO' &&
+      !gaeaRef.current.dataView;
+
+    if (wantNormalFallback) {
+      if (mesh.material !== normalFallbackMat) mesh.material = normalFallbackMat;
+    } else if (mesh.material !== material) {
+      mesh.material = material;
+    }
+
     const H = heightsRef.current;
     const S = sandRef.current;
     const M = mossRef.current;
@@ -545,13 +620,15 @@ export default function InstancedRelicGrid({
     const BE = baseElevationRef.current;
 
     const u = material.uniforms;
-    u.uTime.value = state.clock.elapsedTime;
-    u.uSandStorm.value = Math.max(0, gaeaRef.current.sandStormIntensity);
+    if (mesh.material === material) {
+      u.uTime.value = state.clock.elapsedTime;
+      u.uSandStorm.value = Math.max(0, gaeaRef.current.sandStormIntensity);
 
-    const dataView = gaeaRef.current.dataView;
-    const studio = gaeaRef.current.viewMode === 'STUDIO';
-    u.uViewMode.value = dataView ? 2 : studio ? 1 : 0;
-    (u.uBrushColor.value as THREE.Color).copy(brushGlowColor(gaeaRef.current.brushMode));
+      const dataView = gaeaRef.current.dataView;
+      const studio = gaeaRef.current.viewMode === 'STUDIO';
+      u.uViewMode.value = dataView ? 2 : studio ? 1 : 0;
+      (u.uBrushColor.value as THREE.Color).copy(brushGlowColor(gaeaRef.current.brushMode));
+    }
 
     // ── Brush wobble + glow + vertex-sanding pre-compute ────────────────────
     const fb = paintFeedbackRef.current;
@@ -567,6 +644,7 @@ export default function InstancedRelicGrid({
     const brushActive = pulse > 0.004;
     const t = state.clock.elapsedTime;
     const wobbleFreq = painting ? 28 : 24;
+    const studio = gaeaRef.current.viewMode === 'STUDIO';
     const studioGlowGain = studio ? 2.4 : 1.0;
 
     const glow = glowSmoothedRef.current;
@@ -581,56 +659,63 @@ export default function InstancedRelicGrid({
     const aVSArr = attrs.aVertexSanding.array as Float32Array;
     const aGlowArr = attrs.aBrushActive.array as Float32Array;
 
+    const shaderPath = mesh.material === material;
+
     for (let k = 0; k < N; k++) {
       const c = cells[k];
       const initH = c.initialHeight > 1e-6 ? c.initialHeight : 1;
       const h = Math.max(MIN_INSTANCE_SCALE_Y, H[k]);
       const integrity = THREE.MathUtils.clamp(h / initH, 0, 1);
 
-      aIntArr[k] = integrity;
-      aDistArr[k] = D[k];
-      aBaseArr[k] = BE[k];
-      aSandArr[k] = S[k];
-      aMossArr[k] = M[k];
+      if (shaderPath) {
+        aIntArr[k] = integrity;
+        aDistArr[k] = D[k];
+        aBaseArr[k] = BE[k];
+        aSandArr[k] = S[k];
+        aMossArr[k] = M[k];
 
-      // Brush proximity: drives glow + ERODE-mode vertex sanding.
-      let glowTarget = 0;
-      let sandingTarget = 0;
-      let wobbleX = 0;
-      let wobbleY = 0;
-      let wobbleZ = 0;
-      if (brushActive) {
-        const dx = c.x - cx;
-        const dz = c.z - cz;
-        const dist = Math.hypot(dx, dz);
-        if (dist < r) {
-          const falloff = 1 - dist / r;
-          glowTarget = pulse * falloff * studioGlowGain;
-          if (brushMode === 'ERODE') {
-            sandingTarget =
-              pulse *
-              falloff *
-              (0.95 + 0.55 * brushStrength) *
-              (painting ? 1.15 : 0.72);
+        // Brush proximity: drives glow + ERODE-mode vertex sanding.
+        let glowTarget = 0;
+        let sandingTarget = 0;
+        let wobbleX = 0;
+        let wobbleY = 0;
+        let wobbleZ = 0;
+        if (brushActive) {
+          const dx = c.x - cx;
+          const dz = c.z - cz;
+          const dist = Math.hypot(dx, dz);
+          if (dist < r) {
+            const falloff = 1 - dist / r;
+            glowTarget = pulse * falloff * studioGlowGain;
+            if (brushMode === 'ERODE') {
+              sandingTarget =
+                pulse *
+                falloff *
+                (0.95 + 0.55 * brushStrength) *
+                (painting ? 1.15 : 0.72);
+            }
+            const w = pulse * falloff;
+            const amp = 0.017 * w * (painting ? 1.35 : 1);
+            wobbleX = Math.sin(t * wobbleFreq) * amp;
+            wobbleY = Math.sin(t * wobbleFreq * 2.2) * amp * 0.75;
+            wobbleZ = Math.cos(t * wobbleFreq * 0.9) * amp;
           }
-          const w = pulse * falloff;
-          const amp = 0.017 * w * (painting ? 1.35 : 1);
-          wobbleX = Math.sin(t * wobbleFreq) * amp;
-          wobbleY = Math.sin(t * wobbleFreq * 2.2) * amp * 0.75;
-          wobbleZ = Math.cos(t * wobbleFreq * 0.9) * amp;
         }
+
+        glow[k] = THREE.MathUtils.lerp(glow[k], glowTarget, lerpA);
+        sanding[k] = THREE.MathUtils.lerp(sanding[k], sandingTarget, lerpA);
+
+        aGlowArr[k] = glow[k];
+        aVSArr[k] = sanding[k];
+
+        _basePosition.set(c.x + wobbleX, h * 0.5 + wobbleY, c.z + wobbleZ);
+      } else {
+        _basePosition.set(c.x, h * 0.5, c.z);
       }
-
-      glow[k] = THREE.MathUtils.lerp(glow[k], glowTarget, lerpA);
-      sanding[k] = THREE.MathUtils.lerp(sanding[k], sandingTarget, lerpA);
-
-      aGlowArr[k] = glow[k];
-      aVSArr[k] = sanding[k];
 
       // Per-cell instance transform: scale = (w, currentHeight, d), position
       // sets the centred unit box's base on the ground (+ wobble).
       _baseScale.set(BOX_W, h, BOX_D);
-      _basePosition.set(c.x + wobbleX, h * 0.5 + wobbleY, c.z + wobbleZ);
       _dummy.position.copy(_basePosition);
       _dummy.scale.copy(_baseScale);
       _dummy.quaternion.copy(_identityQuat);
@@ -638,13 +723,15 @@ export default function InstancedRelicGrid({
       mesh.setMatrixAt(k, _dummy.matrix);
     }
 
-    attrs.aIntegrity.needsUpdate = true;
-    attrs.aDistortion.needsUpdate = true;
-    attrs.aBaseElev.needsUpdate = true;
-    attrs.aSand.needsUpdate = true;
-    attrs.aMoss.needsUpdate = true;
-    attrs.aBrushActive.needsUpdate = true;
-    attrs.aVertexSanding.needsUpdate = true;
+    if (shaderPath) {
+      attrs.aIntegrity.needsUpdate = true;
+      attrs.aDistortion.needsUpdate = true;
+      attrs.aBaseElev.needsUpdate = true;
+      attrs.aSand.needsUpdate = true;
+      attrs.aMoss.needsUpdate = true;
+      attrs.aBrushActive.needsUpdate = true;
+      attrs.aVertexSanding.needsUpdate = true;
+    }
     mesh.instanceMatrix.needsUpdate = true;
   });
 

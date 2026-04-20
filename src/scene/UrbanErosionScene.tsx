@@ -1,5 +1,7 @@
-import { useRef } from 'react';
-import type { MutableRefObject } from 'react';
+import { useLayoutEffect, useRef } from 'react';
+import type { MutableRefObject, RefObject } from 'react';
+import { useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import { ContactShadows, OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import TileMap from './TileMap';
 import AtmosphereParticles from './AtmosphereParticles';
@@ -13,6 +15,25 @@ import { DEFAULT_ARCHITECTURE } from '../gaea/gaeaParams';
 import type { WeatherParamsRef, ResolvedWeatherRef } from '../gaea/weatherParams';
 import type { StudioProjectBridge } from '../studio/relicProject';
 import { useWorldStore } from '../state/worldStore';
+
+function StudioViewportCamera({ controlsRef }: { controlsRef: RefObject<any> }) {
+  const camera = useThree(s => s.camera);
+  useLayoutEffect(() => {
+    camera.position.set(50, 50, 50);
+    camera.lookAt(0, 0, 0);
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.near = 0.1;
+      camera.far = Math.max(2000, camera.far);
+      camera.updateProjectionMatrix();
+    }
+    const c = controlsRef.current;
+    if (c?.target) {
+      c.target.set(0, 0, 0);
+      c.update?.();
+    }
+  }, [camera, controlsRef]);
+  return null;
+}
 
 interface UrbanErosionSceneProps {
   gaeaRef: GaeaParamsRef;
@@ -44,11 +65,13 @@ export default function UrbanErosionScene({
   // eroded down to MIN_HEIGHT and momentarily disappears under the brush.
   // Cinema strips both helpers — they would shred the beauty pass.
   const isStudio = useWorldStore(s => s.viewMode === 'STUDIO');
+  const orbitRef = useRef<any>(null);
 
   return (
     <>
-      <PerspectiveCamera makeDefault position={[12, 10, 12]} />
-      <OrbitControls enableDamping />
+      <PerspectiveCamera makeDefault position={[50, 50, 50]} near={0.1} far={2000} />
+      <OrbitControls ref={orbitRef} enableDamping target={[0, 0, 0]} />
+      <StudioViewportCamera controlsRef={orbitRef} />
       <DroneController gaeaRef={gaeaRef} />
 
       <WeatherLighting

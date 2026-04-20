@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -210,11 +210,21 @@ export default function WeatherLighting({
     srgb(f.color);
     return f;
   }, []);
-  const { gl } = useThree();
+  const { gl, scene } = useThree();
   // Studio mode strips fog entirely so the sculpting view stays razor-sharp;
   // we still update the FogExp2 instance below (cheap), but skip attaching it
   // to the scene so the colour pass never samples it.
   const studio = useWorldStore(s => s.viewMode === 'STUDIO');
+
+  useLayoutEffect(() => {
+    if (studio) {
+      scene.fog = null;
+    } else {
+      // Imperatively reattach after STUDIO cleared fog so CINEMA never relies
+      // solely on primitive mount timing for the same frame as the toggle.
+      scene.fog = fog;
+    }
+  }, [fog, scene, studio]);
 
   const stormAnim = useRef<StormAnim | null>(null);
   const lastSeenStormRequest = useRef(0);

@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
 import { useControls, button, folder } from 'leva';
 import type { MutableRefObject } from 'react';
-import type {
-  GaeaParamsRef,
-  ArchitectureParams,
-  BrushMode,
-  ViewMode,
+import {
+  DEFAULT_VISIBLE_PROJECT_SEED,
+  type ArchitectureParams,
+  type BrushMode,
+  type GaeaParamsRef,
+  type ViewMode,
 } from './gaeaParams';
 import { useWorldStore } from '../state/worldStore';
 
@@ -60,7 +61,7 @@ export default function GaeaLevaBridge({
         label: 'Base Height',
       },
       seed: {
-        value: 1,
+        value: DEFAULT_VISIBLE_PROJECT_SEED,
         min: 0,
         max: 999,
         step: 1,

@@ -89,10 +89,13 @@ export interface ArchitectureParams {
   seed: number;
 }
 
+/** Boot seed for the dune skyline; kept in sync with Leva Architecture defaults. */
+export const DEFAULT_VISIBLE_PROJECT_SEED = 42;
+
 export const DEFAULT_ARCHITECTURE: ArchitectureParams = {
   gridSize: 10,
   baseHeight: 1,
-  seed: 1,
+  seed: DEFAULT_VISIBLE_PROJECT_SEED,
 };
 
 export type ArchitectureParamsRef = MutableRefObject<ArchitectureParams>;

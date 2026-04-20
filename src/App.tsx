@@ -1,5 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
+import { PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { Leva } from 'leva';
 import UrbanErosionScene from './scene/UrbanErosionScene';
@@ -26,6 +27,21 @@ import './App.css';
  * explicit ResizeObserver can drive `aspect` updates against the right
  * camera even after R3F swaps it.
  */
+/** Visible placeholder so a suspended route never shows an empty WebGL rect on Vercel. */
+function CanvasLoadingFallback() {
+  return (
+    <>
+      <color attach="background" args={['#141416']} />
+      <ambientLight intensity={0.4} />
+      <PerspectiveCamera makeDefault position={[50, 50, 50]} near={0.1} far={2000} />
+      <mesh>
+        <boxGeometry args={[2, 2, 2]} />
+        <meshBasicMaterial color="#5a5d66" wireframe />
+      </mesh>
+    </>
+  );
+}
+
 function CaptureActiveCamera({
   cameraRef,
 }: {
@@ -164,7 +180,7 @@ function App() {
       />
       <div ref={canvasHostRef} className="canvas-host">
         <Canvas
-          gl={{ antialias: true }}
+          gl={{ antialias: true, powerPreference: 'high-performance' }}
           onCreated={({ gl }) => {
             // ── Three r160+ compliance ──────────────────────────────────────
             // ColorManagement is enabled by default in modern three; we assert
@@ -183,7 +199,7 @@ function App() {
           shadows
         >
           <CaptureActiveCamera cameraRef={cameraRef} />
-          <Suspense fallback={null}>
+          <Suspense fallback={<CanvasLoadingFallback />}>
             <UrbanErosionScene
               key={tileMapKey}
               gaeaRef={gaeaRef}
